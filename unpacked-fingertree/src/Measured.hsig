@@ -1,0 +1,5 @@
+signature Measured where
+
+data Key
+instance Eq Key
+instance Ord Key

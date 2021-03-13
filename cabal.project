@@ -1,0 +1,5 @@
+packages:
+  unpacked-fingertree/unpacked-fingertree.cabal
+
+package unpacked-fingertree
+  optimization: True
