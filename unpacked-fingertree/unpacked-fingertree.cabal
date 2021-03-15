@@ -30,7 +30,7 @@ library
     Measured
 
   exposed-modules:
-    Fingertree
+    FingerTree
 
   build-depends:
     base >= 4.10 && < 5
