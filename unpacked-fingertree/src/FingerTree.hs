@@ -7,6 +7,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedSums #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -33,16 +34,18 @@ module FingerTree
   , takeUntil
   , dropUntil
   , reverse
+  , omapWithPos
+  , omapWithContext
+  , otraverseWithPos
+  , otraverseWithContext
   ) where
 
+import Control.DeepSeq
 import Prelude hiding (null, reverse)
+import Data.MonoTraversable
 import GHC.Generics
 
-type Elem = [Int]
-type Measure = [Int]
-
-measure :: [Int] -> [Int]
-measure = id
+import Measured
 
 infixr 5 ><
 infixr 5 <|, :<
@@ -54,12 +57,16 @@ infixl 5 |>>, :>>
 data ViewL
    = EmptyL
    | Elem :< FingerTree
-  deriving (Eq, Ord)
+
+deriving instance (Eq Elem, Eq Measure) => Eq ViewL
+deriving instance (Ord Elem, Ord Measure) => Ord ViewL
 
 data ViewR
    = EmptyR
    | FingerTree :> Elem
-  deriving (Eq, Ord)
+
+deriving instance (Eq Elem, Eq Measure) => Eq ViewR
+deriving instance (Ord Elem, Ord Measure) => Ord ViewR
 
 data ViewNL l
    = EmptyNL
@@ -95,8 +102,8 @@ data Node l where
     -> Node l
     -> Node ('Level_Branch l)
 
-deriving instance Eq (Node l)
-deriving instance Ord (Node l)
+deriving instance (Eq Measure, Eq Elem) => Eq (Node l)
+deriving instance (Ord Measure, Ord Elem) => Ord (Node l)
 
 measureNode :: Node l -> Measure
 measureNode = \case
@@ -142,7 +149,7 @@ measureDigitN = \case
   (# | | (# x, y, z #) | #) -> measureNode x <> measureNode y <> measureNode z
   (# | | | (# w, x, y, z #) #) -> measureNode w <> measureNode x <> measureNode y <> measureNode z
 
-eqDigitN :: DigitN l -> DigitN l -> Bool
+eqDigitN :: (Eq Measure, Eq Elem) => DigitN l -> DigitN l -> Bool
 eqDigitN = \case
   OneN a1 -> \case
     OneN a2 -> a1 == a2
@@ -157,7 +164,7 @@ eqDigitN = \case
     FourN a2 b2 c2 d2 -> a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2
     _ -> False
 
-compareDigitN :: DigitN l -> DigitN l -> Ordering
+compareDigitN :: (Ord Measure, Ord Elem) => DigitN l -> DigitN l -> Ordering
 compareDigitN = \case
   OneN a1 -> \case
     OneN a2 -> compare a1 a2
@@ -222,7 +229,7 @@ nodeToDigitL = \case
   Node_Leaf2 _ x y -> TwoL x y
   Node_Leaf3 _ x y z -> ThreeL x y z
 
-eqDigitL :: DigitL -> DigitL -> Bool
+eqDigitL :: Eq Elem => DigitL -> DigitL -> Bool
 eqDigitL = \case
   OneL a1 -> \case
     OneL a2 -> a1 == a2
@@ -237,7 +244,7 @@ eqDigitL = \case
     FourL a2 b2 c2 d2 -> a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2
     _ -> False
 
-compareDigitL :: DigitL -> DigitL -> Ordering
+compareDigitL :: Ord Elem => DigitL -> DigitL -> Ordering
 compareDigitL = \case
   OneL a1 -> \case
     OneL a2 -> compare a1 a2
@@ -280,7 +287,7 @@ data DeepTree l where
     -> DigitN l
     -> DeepTree l
 
-instance Eq (DeepTree l) where
+instance (Eq Elem, Eq Measure) => Eq (DeepTree l) where
   a == b = case (a, b) of
     (DeepTree_Empty, DeepTree_Empty) -> True
     (DeepTree_Single x, DeepTree_Single y) -> x == y
@@ -291,7 +298,7 @@ instance Eq (DeepTree l) where
       && eqDigitN sf1 sf2
     (_, _) -> False
 
-instance Ord (DeepTree l) where
+instance (Ord Elem, Ord Measure) => Ord (DeepTree l) where
   compare a b = case (a, b) of
     (DeepTree_Empty, DeepTree_Empty) -> EQ
     (DeepTree_Empty, _) -> LT
@@ -318,7 +325,40 @@ data FingerTree
    | FingerTree_Single {-# UNPACK #-} !Elem
    | FingerTree_Deep Measure DigitL (DeepTree 'Level_Leaf) DigitL
 
-instance Eq FingerTree where
+instance (NFData Elem, NFData Measure) => NFData FingerTree where
+  rnf = \case
+    FingerTree_Empty -> ()
+    FingerTree_Single x -> rnf x
+    FingerTree_Deep m pr t sf -> rnf m `seq` rnfDigitL pr `seq` rnfDeepTree t `seq` rnfDigitL sf
+
+rnfDigitL :: NFData Elem => DigitL -> ()
+rnfDigitL = \case
+  OneL x -> rnf x
+  TwoL x y -> rnf x `seq` rnf y
+  ThreeL x y z -> rnf x `seq` rnf y `seq` rnf z
+  FourL w x y z -> rnf w `seq` rnf x `seq` rnf y `seq` rnf z
+
+rnfDeepTree :: (NFData Elem, NFData Measure) => DeepTree l -> ()
+rnfDeepTree = \case
+  DeepTree_Empty -> ()
+  DeepTree_Single x -> rnfNode x
+  DeepTree_Deep m pr t sf -> rnf m `seq` rnfDigitN pr `seq` rnfDeepTree t `seq` rnfDigitN sf
+
+rnfDigitN :: (NFData Elem, NFData Measure) => DigitN l -> ()
+rnfDigitN = \case
+  OneN x -> rnfNode x
+  TwoN x y -> rnfNode x `seq` rnfNode y
+  ThreeN x y z -> rnfNode x `seq` rnfNode y `seq` rnfNode z
+  FourN w x y z -> rnfNode w `seq` rnfNode x `seq` rnfNode y `seq` rnfNode z
+
+rnfNode :: (NFData Elem, NFData Measure) => Node l -> ()
+rnfNode = \case
+  Node_Leaf2 m x y -> rnf m `seq` rnf x `seq` rnf y
+  Node_Leaf3 m x y z -> rnf m `seq` rnf x `seq` rnf y `seq` rnf z
+  Node_Branch2 m x y -> rnf m `seq` rnfNode x `seq` rnfNode y
+  Node_Branch3 m x y z -> rnf m `seq` rnfNode x `seq` rnfNode y `seq` rnfNode z
+
+instance (Eq Elem, Eq Measure) => Eq FingerTree where
   a == b = case (a, b) of
     (FingerTree_Empty, FingerTree_Empty) -> True
     (FingerTree_Single x, FingerTree_Single y) -> x == y
@@ -329,7 +369,7 @@ instance Eq FingerTree where
       && eqDigitL sf1 sf2
     (_, _) -> False
 
-instance Ord FingerTree where
+instance (Ord Elem, Ord Measure) => Ord FingerTree where
   compare a b = case (a, b) of
     (FingerTree_Empty, FingerTree_Empty) -> EQ
     (FingerTree_Empty, _) -> LT
@@ -372,6 +412,402 @@ deepN pr m sf = DeepTree_Deep
   pr
   m
   sf
+
+----
+
+type instance Element FingerTree = Elem
+
+instance MonoFunctor FingerTree where
+  omap f = \case
+    FingerTree_Empty -> FingerTree_Empty
+    FingerTree_Single x -> FingerTree_Single (f x)
+    FingerTree_Deep _ pr t sf -> deepL
+      (omapDigitL f pr)
+      (omapDeepTree f t)
+      (omapDigitL f sf)
+
+omapDigitL :: (Elem -> Elem) -> DigitL -> DigitL
+omapDigitL f = \case
+  OneL x -> OneL (f x)
+  TwoL x y -> TwoL (f x) (f y)
+  ThreeL x y z -> ThreeL (f x) (f y) (f z)
+  FourL w x y z -> FourL (f w) (f x) (f y) (f z)
+
+omapDeepTree :: (Elem -> Elem) -> DeepTree l -> DeepTree l
+omapDeepTree f = \case
+  DeepTree_Empty -> DeepTree_Empty
+  DeepTree_Single x -> DeepTree_Single (omapNode f x)
+  DeepTree_Deep _ pr t sf -> deepN
+    (omapDigitN f pr)
+    (omapDeepTree f t)
+    (omapDigitN f sf)
+
+omapNode :: (Elem -> Elem) -> Node l -> Node l
+omapNode f = \case
+  Node_Leaf2 _ x y -> node2L (f x) (f y)
+  Node_Leaf3 _ x y z -> node3L (f x) (f y) (f z)
+  Node_Branch2 _ x y -> node2N (omapNode f x) (omapNode f y)
+  Node_Branch3 _ x y z -> node3N (omapNode f x) (omapNode f y) (omapNode f z)
+
+omapDigitN :: (Elem -> Elem) -> DigitN l -> DigitN l
+omapDigitN f = \case
+  OneN x -> OneN (omapNode f x)
+  TwoN x y -> TwoN (omapNode f x) (omapNode f y)
+  ThreeN x y z -> ThreeN (omapNode f x) (omapNode f y) (omapNode f z)
+  FourN w x y z -> FourN (omapNode f w) (omapNode f x) (omapNode f y) (omapNode f z)
+
+instance MonoFoldable FingerTree where
+  ofoldMap f = \case
+    FingerTree_Empty -> mempty
+    FingerTree_Single x -> f x
+    FingerTree_Deep _ pr t sf -> mconcat
+      [ ofoldMapDigitL f pr
+      , ofoldMapDeepTree f t
+      , ofoldMapDigitL f sf
+      ]
+  ofoldr = undefined
+  ofoldl' = undefined
+  otoList = undefined
+  oall = undefined
+  oany = undefined
+  onull = undefined
+  olength64 = undefined
+  omapM_ _ = undefined
+  ofoldr1Ex = undefined
+  ofoldl1Ex' = undefined
+  headEx = undefined
+  lastEx = undefined
+  oelem = undefined
+  onotElem = undefined
+
+ofoldMapDigitL :: Monoid m => (Elem -> m) -> DigitL -> m
+ofoldMapDigitL f = \case
+  OneL x -> f x
+  TwoL x y -> f x <> f y
+  ThreeL x y z -> f x <> f y <> f z
+  FourL w x y z -> f w <> f x <> f y <> f z
+
+ofoldMapDeepTree :: Monoid m => (Elem -> m) -> DeepTree l -> m
+ofoldMapDeepTree f = \case
+  DeepTree_Empty -> mempty
+  DeepTree_Single x -> ofoldMapNode f x
+  DeepTree_Deep _ pr t sf -> ofoldMapDigitN f pr <> ofoldMapDeepTree f t <> ofoldMapDigitN f sf
+
+ofoldMapNode :: Monoid m => (Elem -> m) -> Node l -> m
+ofoldMapNode f = \case
+  Node_Leaf2 _ x y -> f x <> f y
+  Node_Leaf3 _ x y z -> f x <> f y <> f z
+  Node_Branch2 _ x y -> ofoldMapNode f x <> ofoldMapNode f y
+  Node_Branch3 _ x y z -> ofoldMapNode f x <> ofoldMapNode f y <> ofoldMapNode f z
+
+ofoldMapDigitN :: Monoid m => (Elem -> m) -> DigitN l -> m
+ofoldMapDigitN f = \case
+  OneN x -> ofoldMapNode f x
+  TwoN x y -> ofoldMapNode f x <> ofoldMapNode f y
+  ThreeN x y z -> ofoldMapNode f x <> ofoldMapNode f y <> ofoldMapNode f z
+  FourN w x y z -> ofoldMapNode f w <> ofoldMapNode f x <> ofoldMapNode f y <> ofoldMapNode f z
+
+instance MonoTraversable FingerTree where
+  otraverse f = \case
+    FingerTree_Empty -> pure FingerTree_Empty
+    FingerTree_Single x -> FingerTree_Single <$> f x
+    FingerTree_Deep _ pr t sf -> otraverseDigitL (otraverseDigitL (pure deepL) f pr <*> otraverseDeepTree f t) f sf
+
+withOneL :: Functor f => f (DigitL -> b) -> f (Elem -> b)
+withOneL = fmap (\f x -> f (OneL x))
+
+withTwoL :: Applicative f => f (DigitL -> b) -> f (Elem -> Elem -> b)
+withTwoL = fmap (\f x y -> f (TwoL x y))
+
+withThreeL :: Applicative f => f (DigitL -> b) -> f (Elem -> Elem -> Elem -> b)
+withThreeL = fmap (\f x y z -> f (ThreeL x y z))
+
+withFourL :: Applicative f => f (DigitL -> b) -> f (Elem -> Elem -> Elem -> Elem -> b)
+withFourL = fmap (\f w x y z -> f (FourL w x y z))
+
+otraverseDigitL :: Applicative f => f (DigitL -> b) -> (Elem -> f Elem) -> DigitL -> f b
+otraverseDigitL k f d = case d of
+  OneL x -> withOneL k <*> f x
+  TwoL x y -> withTwoL k <*> f x <*> f y
+  ThreeL x y z -> withThreeL k <*> f x <*> f y <*> f z
+  FourL w x y z -> withFourL k <*> f w <*> f x <*> f y <*> f z
+
+otraverseDeepTree :: Applicative f => (Elem -> f Elem) -> DeepTree l -> f (DeepTree l)
+otraverseDeepTree f = \case
+  DeepTree_Empty -> pure DeepTree_Empty
+  DeepTree_Single x -> DeepTree_Single <$> otraverseNode f x
+  DeepTree_Deep _ pr t sf -> otraverseDigitN (otraverseDigitN (pure deepN) f pr <*> otraverseDeepTree f t) f sf
+
+withOneN :: Functor f => f (DigitN l -> b) -> f (Node l -> b)
+withOneN = fmap (\f x -> f (OneN x))
+
+withTwoN :: Applicative f => f (DigitN l -> b) -> f (Node l -> Node l -> b)
+withTwoN = fmap (\f x y -> f (TwoN x y))
+
+withThreeN :: Applicative f => f (DigitN l -> b) -> f (Node l -> Node l -> Node l -> b)
+withThreeN = fmap (\f x y z -> f (ThreeN x y z))
+
+withFourN :: Applicative f => f (DigitN l -> b) -> f (Node l -> Node l -> Node l -> Node l -> b)
+withFourN = fmap (\f w x y z -> f (FourN w x y z))
+
+otraverseDigitN :: Applicative f => f (DigitN l -> b) -> (Elem -> f Elem) -> DigitN l -> f b
+otraverseDigitN k f d = case d of
+  OneN x -> withOneN k <*> otraverseNode f x
+  TwoN x y -> withTwoN k <*> otraverseNode f x <*> otraverseNode f y
+  ThreeN x y z -> withThreeN k <*> otraverseNode f x <*> otraverseNode f y <*> otraverseNode f z
+  FourN w x y z -> withFourN k <*> otraverseNode f w <*> otraverseNode f x <*> otraverseNode f y <*> otraverseNode f z
+
+otraverseNode :: Applicative f => (Elem -> f Elem) -> Node l -> f (Node l)
+otraverseNode f = \case
+  Node_Leaf2 _ x y -> node2L <$> f x <*> f y
+  Node_Leaf3 _ x y z -> node3L <$> f x <*> f y <*> f z
+  Node_Branch2 _ x y -> node2N <$> otraverseNode f x <*> otraverseNode f y
+  Node_Branch3 _ x y z -> node3N <$> otraverseNode f x <*> otraverseNode f y <*> otraverseNode f z
+
+omapWithPos
+  :: (Measure -> Elem -> Elem)
+  -> FingerTree
+  -> FingerTree
+omapWithPos f = omapWithContext (\pr x _ -> f pr x)
+
+omapWithContext
+  :: (Measure -> Elem -> Measure -> Elem)
+  -> FingerTree
+  -> FingerTree
+omapWithContext f = \case
+  FingerTree_Empty -> FingerTree_Empty
+  FingerTree_Single x -> FingerTree_Single (f mempty x mempty)
+  FingerTree_Deep _ pr t sf ->
+    let prm = measureDigitL pr
+        tm = measureDeepTree t
+        sfm = measureDigitL sf
+     in deepL
+       (omapWithContextDigitL mempty (tm <> sfm) f pr)
+       (omapWithContextDeepTree prm sfm f t)
+       (omapWithContextDigitL (prm <> tm) mempty f sf)
+
+omapWithContextDigitL :: Measure -> Measure -> (Measure -> Elem -> Measure -> Elem) -> DigitL -> DigitL
+omapWithContextDigitL m0 m1 f = \case
+  OneL x -> OneL (f m0 x m1)
+  TwoL x y ->
+    let mx = measure x
+        my = measure y
+     in TwoL (f m0 x (my <> m1)) (f (m0 <> mx) y m1)
+  ThreeL x y z ->
+    let mx = measure x
+        my = measure y
+        mz = measure z
+     in ThreeL (f m0 x (my <> mz <> m1)) (f (m0 <> mx) y (mz <> m1)) (f (m0 <> mx <> my) z m1)
+  FourL w x y z ->
+    let mw = measure w
+        mx = measure x
+        my = measure y
+        mz = measure z
+     in FourL
+          (f m0 w (mx <> my <> mz <> m1))
+          (f (m0 <> mw) x (my <> mz <> m1))
+          (f (m0 <> mw <> mx) y (mz <> m1))
+          (f (m0 <> mw <> mx <> my) z m1)
+
+omapWithContextDeepTree :: Measure -> Measure -> (Measure -> Elem -> Measure -> Elem) -> DeepTree l -> DeepTree l
+omapWithContextDeepTree m0 m1 f = \case
+  DeepTree_Empty -> DeepTree_Empty
+  DeepTree_Single x -> DeepTree_Single (omapWithContextNode m0 m1 f x)
+  DeepTree_Deep _ pr t sf ->
+    let prm = measureDigitN pr
+        tm = measureDeepTree t
+        sfm = measureDigitN sf
+     in deepN
+       (omapWithContextDigitN m0 (tm <> sfm <> m1) f pr)
+       (omapWithContextDeepTree (m0 <> prm) (sfm <> m1) f t)
+       (omapWithContextDigitN (m0 <> prm <> tm) m1 f sf)
+
+omapWithContextDigitN :: Measure -> Measure -> (Measure -> Elem -> Measure -> Elem) -> DigitN l -> DigitN l
+omapWithContextDigitN m0 m1 f = \case
+  OneN x -> OneN (omapWithContextNode m0 m1 f x)
+  TwoN x y ->
+    let mx = measureNode x
+        my = measureNode y
+     in TwoN (omapWithContextNode m0 (my <> m1) f x) (omapWithContextNode (m0 <> mx) m1 f y)
+  ThreeN x y z ->
+    let mx = measureNode x
+        my = measureNode y
+        mz = measureNode z
+     in ThreeN
+          (omapWithContextNode m0 (my <> mz <> m1) f x)
+          (omapWithContextNode (m0 <> mx) (mz <> m1) f y)
+          (omapWithContextNode (m0 <> mx <> my) m1 f z)
+  FourN w x y z ->
+    let mw = measureNode w
+        mx = measureNode x
+        my = measureNode y
+        mz = measureNode z
+     in FourN
+          (omapWithContextNode m0 m1 f w)
+          (omapWithContextNode (m0 <> mw) (my <> mz <> m1) f x)
+          (omapWithContextNode (m0 <> mw <> mx) (mz <> m1) f y)
+          (omapWithContextNode (m0 <> mw <> mx <> my) m1 f z)
+
+omapWithContextNode :: Measure -> Measure -> (Measure -> Elem -> Measure -> Elem) -> Node l -> Node l
+omapWithContextNode m0 m1 f = \case
+  Node_Leaf2 _ x y ->
+    let mx = measure x
+        my = measure y
+     in node2L (f m0 x (my <> m1)) (f (m0 <> mx) y m1)
+  Node_Leaf3 _ x y z ->
+    let mx = measure x
+        my = measure y
+        mz = measure z
+     in node3L (f m0 x (my <> mz <> m1)) (f (m0 <> mx) y (mz <> m1)) (f (m0 <> mx <> my) z m1)
+  Node_Branch2 _ x y ->
+    let mx = measureNode x
+        my = measureNode y
+     in node2N (omapWithContextNode m0 (my <> m1) f x) (omapWithContextNode (m0 <> mx) m1 f y)
+  Node_Branch3 _ x y z ->
+    let mx = measureNode x
+        my = measureNode y
+        mz = measureNode z
+     in node3N
+          (omapWithContextNode m0 (my <> mz <> m1) f x)
+          (omapWithContextNode (m0 <> mx) (mz <> m1) f y)
+          (omapWithContextNode (m0 <> mx <> my) m1 f z)
+
+otraverseWithPos
+  :: Applicative f
+  => (Measure -> Elem -> f Elem)
+  -> FingerTree
+  -> f FingerTree
+otraverseWithPos f = otraverseWithContext (\pr x _ -> f pr x)
+
+otraverseWithContext
+  :: Applicative f
+  => (Measure -> Elem -> Measure -> f Elem)
+  -> FingerTree
+  -> f FingerTree
+otraverseWithContext f = \case
+  FingerTree_Empty -> pure FingerTree_Empty
+  FingerTree_Single x -> FingerTree_Single <$> f mempty x mempty
+  FingerTree_Deep _ pr t sf ->
+    let mpr = measureDigitL pr
+        mt = measureDeepTree t
+        msf = measureDigitL sf
+     in otraverseWithContextDigitL (mpr <> mt) mempty
+          (otraverseWithContextDigitL mempty (mt <> msf) (pure deepL) f pr <*> otraverseWithContextDeepTree mpr msf f t) f sf
+
+otraverseWithContextDigitL
+  :: Applicative f
+  => Measure
+  -> Measure
+  -> f (DigitL -> b)
+  -> (Measure -> Elem -> Measure -> f Elem)
+  -> DigitL
+  -> f b
+otraverseWithContextDigitL m0 m1 k f = \case
+  OneL x -> withOneL k <*> f m0 x m1
+  TwoL x y ->
+    let mx = measure x
+        my = measure y
+     in withTwoL k <*> f m0 x (my <> m1) <*> f (m0 <> mx) y m1
+  ThreeL x y z ->
+    let mx = measure x
+        my = measure y
+        mz = measure z
+     in withThreeL k
+          <*> f m0 x (mx <> my <> m1)
+          <*> f (m0 <> mx) y (mz <> m1)
+          <*> f (m0 <> mx <> my) z m1
+  FourL w x y z ->
+   let mw = measure w
+       mx = measure x
+       my = measure y
+       mz = measure z
+    in withFourL k
+         <*> f m0 w (mx <> my <> mz <> m1)
+         <*> f (m0 <> mw) x (my <> mz <> m1)
+         <*> f (m0 <> mw <> mx) y (mz <> m1)
+         <*> f (m0 <> mw <> mx <> my) z m1
+
+otraverseWithContextDeepTree
+  :: Applicative f
+  => Measure
+  -> Measure
+  -> (Measure -> Elem -> Measure -> f Elem)
+  -> DeepTree l
+  -> f (DeepTree l)
+otraverseWithContextDeepTree m0 m1 f = \case
+  DeepTree_Empty -> pure DeepTree_Empty
+  DeepTree_Single x -> DeepTree_Single <$> otraverseWithContextNode m0 m1 f x
+  DeepTree_Deep _ pr t sf ->
+    let mpr = measureDigitN pr
+        mt = measureDeepTree t
+        msf = measureDigitN sf
+     in otraverseWithContextDigitN (m0 <> mpr <> mt) m1
+          (otraverseWithContextDigitN m0 (mt <> msf <> m1) (pure deepN) f pr <*> otraverseWithContextDeepTree mpr msf f t) f sf
+
+otraverseWithContextDigitN
+  :: Applicative f
+  => Measure
+  -> Measure
+  -> f (DigitN l -> b)
+  -> (Measure -> Elem -> Measure -> f Elem)
+  -> DigitN l
+  -> f b
+otraverseWithContextDigitN m0 m1 k f = \case
+  OneN x -> withOneN k <*> otraverseWithContextNode m0 m1 f x
+  TwoN x y ->
+    let mx = measureNode x
+        my = measureNode y
+     in withTwoN k <*> otraverseWithContextNode m0 (my <> m1) f x <*> otraverseWithContextNode (m0 <> mx) m1 f y
+  ThreeN x y z ->
+    let mx = measureNode x
+        my = measureNode y
+        mz = measureNode z
+     in withThreeN k
+          <*> otraverseWithContextNode m0 (mx <> my <> m1) f x
+          <*> otraverseWithContextNode (m0 <> mx) (mz <> m1) f y
+          <*> otraverseWithContextNode (m0 <> mx <> my) m1 f z
+  FourN w x y z ->
+   let mw = measureNode w
+       mx = measureNode x
+       my = measureNode y
+       mz = measureNode z
+    in withFourN k
+         <*> otraverseWithContextNode m0 (mx <> my <> mz <> m1) f w
+         <*> otraverseWithContextNode (m0 <> mw) (my <> mz <> m1) f x
+         <*> otraverseWithContextNode (m0 <> mw <> mx) (mz <> m1) f y
+         <*> otraverseWithContextNode (m0 <> mw <> mx <> my) m1 f z
+
+otraverseWithContextNode
+  :: Applicative f
+  => Measure
+  -> Measure
+  ->(Measure -> Elem -> Measure -> f Elem)
+  -> Node l
+  -> f (Node l)
+otraverseWithContextNode m0 m1 f = \case
+  Node_Leaf2 _ x y ->
+   let mx = measure x
+       my = measure y
+    in node2L <$> f m0 x (my <> m1) <*> f (m0 <> mx) y m1
+  Node_Leaf3 _ x y z ->
+   let mx = measure x
+       my = measure y
+       mz = measure z
+    in node3L <$> f m0 x (my <> mz <> m1) <*> f (m0 <> mx) y (mz <> m1) <*> f (m0 <> mx <> my) z m1
+  Node_Branch2 _ x y ->
+   let mx = measureNode x
+       my = measureNode y
+    in node2N <$> otraverseWithContextNode m0 (my <> m1) f x <*> otraverseWithContextNode (m0 <> mx) m1 f y
+  Node_Branch3 _ x y z ->
+    let mx = measureNode x
+        my = measureNode y
+        mz = measureNode z
+     in node3N
+          <$> otraverseWithContextNode m0 (my <> mz <> m1) f x
+          <*> otraverseWithContextNode (m0 <> mx) (mz <> m1) f y
+          <*> otraverseWithContextNode (m0 <> mx <> my) m1 f z
+
+----
 
 empty :: FingerTree
 empty = FingerTree_Empty
@@ -602,6 +1038,12 @@ digitToTreeN = \case
 ----------------
 -- Concatenation
 ----------------
+
+instance Semigroup FingerTree where
+  (<>) = (><)
+
+instance Monoid FingerTree where
+  mempty = empty
 
 -- | /O(log(min(n1,n2)))/. Concatenate two sequences.
 (><) :: FingerTree -> FingerTree -> FingerTree
@@ -855,7 +1297,10 @@ data SearchResult
         -- ^ No position in the tree, returned if the predicate is 'True'
         -- at the left end and 'False' at the right end.  This will not
         -- occur if the predicate in monotonic on the tree.
-  deriving (Eq, Ord, Generic)
+  deriving Generic
+
+deriving instance (Eq Elem, Eq Measure) => Eq SearchResult
+deriving instance (Ord Elem, Ord Measure) => Ord SearchResult
 
 -- | /O(log(min(i,n-i)))/. Search a sequence for a point where a predicate
 -- on splits of the sequence changes from 'False' to 'True'.
@@ -1136,8 +1581,8 @@ takeUntil p  =  fst . split p
 -- after removing the largest prefix whose measure does not satisfy @p@.
 --
 -- * @'dropUntil' p t = 'snd' ('split' p t)@
-dropUntil :: (Elem -> Bool) -> FingerTree -> FingerTree
-dropUntil p  =  snd . split p
+dropUntil :: (Measure -> Bool) -> FingerTree -> FingerTree
+dropUntil p =  snd . split p
 
 splitTree :: (Measure -> Bool) -> Measure -> FingerTree -> Split FingerTree Elem
 splitTree p i = \case

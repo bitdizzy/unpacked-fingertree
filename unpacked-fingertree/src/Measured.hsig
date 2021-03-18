@@ -3,4 +3,7 @@ signature Measured where
 data Elem
 data Measure
 
+instance Semigroup Measure
+instance Monoid Measure
+
 measure :: Elem -> Measure
