@@ -465,20 +465,22 @@ instance MonoFoldable FingerTree where
       , ofoldMapDeepTree f t
       , ofoldMapDigitL f sf
       ]
-  ofoldr = undefined
-  ofoldl' = undefined
-  otoList = undefined
-  oall = undefined
-  oany = undefined
-  onull = undefined
-  olength64 = undefined
-  omapM_ _ = undefined
-  ofoldr1Ex = undefined
-  ofoldl1Ex' = undefined
-  headEx = undefined
-  lastEx = undefined
-  oelem = undefined
-  onotElem = undefined
+  ofoldr f x0 = \case
+    FingerTree_Empty -> x0
+    FingerTree_Single x -> f x x0
+    FingerTree_Deep _ pr t sf -> ofoldrDigitL f (ofoldrDeepTree f (ofoldrDigitL f x0 sf) t) pr
+  ofoldl' f x0 = \case
+    FingerTree_Empty -> x0
+    FingerTree_Single x -> f x0 x
+    FingerTree_Deep _ pr t sf -> (ofoldlDigitL f $! (ofoldlDeepTree f $! ofoldlDigitL f x0 pr) t) sf
+  ofoldr1Ex f = \case
+    FingerTree_Empty -> error "ofoldr1Ex: empty FingerTree"
+    FingerTree_Single x -> x
+    FingerTree_Deep _ pr t sf -> ofoldrDigitL f (ofoldrDeepTree f (ofoldr1DigitL f sf) t) pr
+  ofoldl1Ex' f = \case
+    FingerTree_Empty -> error "ofoldr1Ex: empty FingerTree"
+    FingerTree_Single x -> x
+    FingerTree_Deep _ pr t sf -> (ofoldlDigitL f $! (ofoldlDeepTree f $! ofoldl1DigitL f pr) t) sf
 
 ofoldMapDigitL :: Monoid m => (Elem -> m) -> DigitL -> m
 ofoldMapDigitL f = \case
@@ -506,6 +508,112 @@ ofoldMapDigitN f = \case
   TwoN x y -> ofoldMapNode f x <> ofoldMapNode f y
   ThreeN x y z -> ofoldMapNode f x <> ofoldMapNode f y <> ofoldMapNode f z
   FourN w x y z -> ofoldMapNode f w <> ofoldMapNode f x <> ofoldMapNode f y <> ofoldMapNode f z
+
+ofoldrDigitL
+  :: (Elem -> r -> r)
+  -> r
+  -> DigitL
+  -> r
+ofoldrDigitL f x0 = \case
+  OneL x -> f x x0
+  TwoL x y -> f x (f y x0)
+  ThreeL x y z -> f x (f y (f z x0))
+  FourL w x y z -> f w (f x (f y (f z x0)))
+
+ofoldr1DigitL
+  :: (Elem -> Elem -> Elem)
+  -> DigitL
+  -> Elem
+ofoldr1DigitL f = \case
+  OneL x -> x
+  TwoL x y -> f x y
+  ThreeL x y z -> f x (f y z)
+  FourL w x y z -> f w (f x (f y z))
+
+ofoldl1DigitL
+  :: (Elem -> Elem -> Elem)
+  -> DigitL
+  -> Elem
+ofoldl1DigitL f = \case
+  OneL x -> x
+  TwoL x y -> f x y
+  ThreeL x y z -> (f $! f x y) z
+  FourL w x y z -> (f $! (f $! f w x) y) z
+
+ofoldrDeepTree
+  :: (Elem -> r -> r)
+  -> r
+  -> DeepTree l
+  -> r
+ofoldrDeepTree f x0 = \case
+  DeepTree_Empty -> x0
+  DeepTree_Single x -> ofoldrNode f x0 x
+  DeepTree_Deep _ pr t sf -> ofoldrDigitN f (ofoldrDeepTree f (ofoldrDigitN f x0 sf) t) pr
+
+ofoldrDigitN
+  :: (Elem -> r -> r)
+  -> r
+  -> DigitN l
+  -> r
+ofoldrDigitN f x0 = \case
+  OneN x -> ofoldrNode f x0 x
+  TwoN x y -> ofoldrNode f (ofoldrNode f x0 y) x
+  ThreeN x y z -> ofoldrNode f (ofoldrNode f (ofoldrNode f x0 z) y) x
+  FourN w x y z -> ofoldrNode f (ofoldrNode f (ofoldrNode f (ofoldrNode f x0 z) y) x) w
+
+ofoldrNode
+  :: (Elem -> r -> r)
+  -> r
+  -> Node l
+  -> r
+ofoldrNode f x0 = \case
+  Node_Leaf2 _ x y -> f x (f y x0)
+  Node_Leaf3 _ x y z -> f x (f y (f z x0))
+  Node_Branch2 _ x y -> ofoldrNode f (ofoldrNode f x0 y) x
+  Node_Branch3 _ x y z -> ofoldrNode f (ofoldrNode f (ofoldrNode f x0 z) y) x
+
+ofoldlDigitL
+  :: (r -> Elem -> r)
+  -> r
+  -> DigitL
+  -> r
+ofoldlDigitL f x0 = \case
+  OneL x -> f x0 x
+  TwoL x y -> (f $! f x0 x) y
+  ThreeL x y z -> (f $! (f $! f x0 x) y) z
+  FourL w x y z -> (f $! (f $! (f $! f x0 w) x) y) z
+
+ofoldlDeepTree
+  :: (r -> Elem -> r)
+  -> r
+  -> DeepTree l
+  -> r
+ofoldlDeepTree f x0 = \case
+  DeepTree_Empty -> x0
+  DeepTree_Single x -> ofoldlNode f x0 x
+  DeepTree_Deep _ pr t sf -> (ofoldlDigitN f $! (ofoldlDeepTree f $! ofoldlDigitN f x0 pr) t) sf
+
+ofoldlDigitN
+  :: (r -> Elem -> r)
+  -> r
+  -> DigitN l
+  -> r
+ofoldlDigitN f x0 = \case
+  OneN x -> ofoldlNode f x0 x
+  TwoN x y -> (ofoldlNode f $! ofoldlNode f x0 y) x
+  ThreeN x y z -> (ofoldlNode f $! (ofoldlNode f $! ofoldlNode f x0 x) y) z
+  FourN w x y z -> (ofoldlNode f $! (ofoldlNode f $! (ofoldlNode f $! ofoldlNode f x0 w) x) y) z
+
+ofoldlNode
+  :: (r -> Elem -> r)
+  -> r
+  -> Node l
+  -> r
+ofoldlNode f x0 = \case
+  Node_Leaf2 _ x y -> (f $! f x0 x) y
+  Node_Leaf3 _ x y z -> (f $! (f $! f x0 x) y) z
+  Node_Branch2 _ x y -> (ofoldlNode f $! ofoldlNode f x0 x) y
+  Node_Branch3 _ x y z -> (ofoldlNode f $! (ofoldlNode f $! ofoldlNode f x0 x) y) z
 
 instance MonoTraversable FingerTree where
   otraverse f = \case

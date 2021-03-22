@@ -1,4 +1,4 @@
-name:          unpacked-fingertree
+name:          unpacked-sequence
 category:      Language
 version:       0
 license:       BSD2
@@ -8,11 +8,11 @@ author:        bitdizzy
 maintainer:    bitdizzy <dev@bitdizzy.io>
 stability:     experimental
 homepage:      http://github.com/bitdizzy/unpacked-fingertree/
-bug-reports:   http://github.com/ekmett/unpacked-fingertree/issues
+bug-reports:   http://github.com/bitdizzy/unpacked-fingertree/issues
 copyright:     Copyright (C) bitdizzy 2021
 build-type:    Simple
-synopsis:      Unpacked fingertrees via backpack
-description:   This backpack mixin package supplies unpacked fingertrees
+synopsis:      Unpacked sequences via backpack
+description:   This backpack mixin package supplies unpacked sequences based on fingertrees
 extra-source-files:
   README.md
   CHANGELOG.md
@@ -28,12 +28,13 @@ library
   hs-source-dirs: src
   signatures:
     Measured
+
   exposed-modules:
-    FingerTree
+    Sequence
 
   build-depends:
       base >= 4.10 && < 5
     , deepseq >= 1.4 && < 2
     , mono-traversable >= 1 && < 2
 
---    , measured-sig >= 1
+--    , unpacked-fingertree

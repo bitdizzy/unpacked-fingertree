@@ -1,5 +1,7 @@
 packages:
   unpacked-fingertree/unpacked-fingertree.cabal
+  unpacked-fingertree/unpacked-sequence.cabal
+  unpacked-fingertree/measured-sig.cabal
 
 package unpacked-fingertree
   optimization: True

@@ -1,6 +1,6 @@
-name:          unpacked-fingertree
+name:          measured-sig
 category:      Language
-version:       0
+version:       1
 license:       BSD2
 -- license-file:  LICENSE
 cabal-version: 2.0
@@ -8,11 +8,11 @@ author:        bitdizzy
 maintainer:    bitdizzy <dev@bitdizzy.io>
 stability:     experimental
 homepage:      http://github.com/bitdizzy/unpacked-fingertree/
-bug-reports:   http://github.com/ekmett/unpacked-fingertree/issues
+bug-reports:   http://github.com/bitdizzy/unpacked-fingertree/issues
 copyright:     Copyright (C) bitdizzy 2021
 build-type:    Simple
-synopsis:      Unpacked fingertrees via backpack
-description:   This backpack mixin package supplies unpacked fingertrees
+synopsis:      Measured elements for unpacked fingertrees
+description:   This backpack signature package defines the requirements on FingerTree elements
 extra-source-files:
   README.md
   CHANGELOG.md
@@ -28,12 +28,6 @@ library
   hs-source-dirs: src
   signatures:
     Measured
-  exposed-modules:
-    FingerTree
 
   build-depends:
       base >= 4.10 && < 5
-    , deepseq >= 1.4 && < 2
-    , mono-traversable >= 1 && < 2
-
---    , measured-sig >= 1
