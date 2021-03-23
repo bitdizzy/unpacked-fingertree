@@ -38,12 +38,18 @@ module FingerTree
   , omapWithContext
   , otraverseWithPos
   , otraverseWithContext
+  -- testing
+  , validateMeasures
   ) where
 
 import Control.DeepSeq
 import Prelude hiding (null, reverse)
 import Data.MonoTraversable
 import GHC.Generics
+
+-- QuickCheck
+import Test.QuickCheck hiding ((><))
+--
 
 import Measured
 
@@ -77,6 +83,10 @@ data ViewNR l
    | DeepTree l :>> Node l
 
 data Level = Level_Leaf | Level_Branch Level
+
+data LevelS k where
+  LevelS_Leaf :: LevelS 'Level_Leaf
+  LevelS_Branch :: LevelS k -> LevelS ('Level_Branch k)
 
 data Node l where
   Node_Leaf2
@@ -149,51 +159,6 @@ measureDigitN = \case
   (# | | (# x, y, z #) | #) -> measureNode x <> measureNode y <> measureNode z
   (# | | | (# w, x, y, z #) #) -> measureNode w <> measureNode x <> measureNode y <> measureNode z
 
-eqDigitN :: (Eq Measure, Eq Elem) => DigitN l -> DigitN l -> Bool
-eqDigitN = \case
-  OneN a1 -> \case
-    OneN a2 -> a1 == a2
-    _ -> False
-  TwoN a1 b1 -> \case
-    TwoN a2 b2 -> a1 == a2 && b1 == b2
-    _ -> False
-  ThreeN a1 b1 c1 -> \case
-    ThreeN a2 b2 c2 -> a1 == a2 && b1 == b2 && c1 == c2
-    _ -> False
-  FourN a1 b1 c1 d1 -> \case
-    FourN a2 b2 c2 d2 -> a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2
-    _ -> False
-
-compareDigitN :: (Ord Measure, Ord Elem) => DigitN l -> DigitN l -> Ordering
-compareDigitN = \case
-  OneN a1 -> \case
-    OneN a2 -> compare a1 a2
-    _ -> LT
-  TwoN a1 b1 -> \case
-    OneN _ -> GT
-    TwoN a2 b2 -> mconcat
-      [ compare a1 a2
-      , compare b1 b2
-      ]
-    _ -> LT
-  ThreeN a1 b1 c1 -> \case
-    OneN _ -> GT
-    TwoN _ _ -> GT
-    ThreeN a2 b2 c2 -> mconcat
-      [ compare a1 a2
-      , compare b1 b2
-      , compare c1 c2
-      ]
-    _ -> LT
-  FourN a1 b1 c1 d1 -> \case
-    FourN a2 b2 c2 d2 -> mconcat
-      [ compare a1 a2
-      , compare b1 b2
-      , compare c1 c2
-      , compare d1 d2
-      ]
-    _ -> GT
-
 type DigitL =
   (# Elem
   | (# Elem, Elem #)
@@ -229,51 +194,6 @@ nodeToDigitL = \case
   Node_Leaf2 _ x y -> TwoL x y
   Node_Leaf3 _ x y z -> ThreeL x y z
 
-eqDigitL :: Eq Elem => DigitL -> DigitL -> Bool
-eqDigitL = \case
-  OneL a1 -> \case
-    OneL a2 -> a1 == a2
-    _ -> False
-  TwoL a1 b1 -> \case
-    TwoL a2 b2 -> a1 == a2 && b1 == b2
-    _ -> False
-  ThreeL a1 b1 c1 -> \case
-    ThreeL a2 b2 c2 -> a1 == a2 && b1 == b2 && c1 == c2
-    _ -> False
-  FourL a1 b1 c1 d1 -> \case
-    FourL a2 b2 c2 d2 -> a1 == a2 && b1 == b2 && c1 == c2 && d1 == d2
-    _ -> False
-
-compareDigitL :: Ord Elem => DigitL -> DigitL -> Ordering
-compareDigitL = \case
-  OneL a1 -> \case
-    OneL a2 -> compare a1 a2
-    _ -> LT
-  TwoL a1 b1 -> \case
-    OneL _ -> GT
-    TwoL a2 b2 -> mconcat
-      [ compare a1 a2
-      , compare b1 b2
-      ]
-    _ -> LT
-  ThreeL a1 b1 c1 -> \case
-    OneL _ -> GT
-    TwoL _ _ -> GT
-    ThreeL a2 b2 c2 -> mconcat
-      [ compare a1 a2
-      , compare b1 b2
-      , compare c1 c2
-      ]
-    _ -> LT
-  FourL a1 b1 c1 d1 -> \case
-    FourL a2 b2 c2 d2 -> mconcat
-      [ compare a1 a2
-      , compare b1 b2
-      , compare c1 c2
-      , compare d1 d2
-      ]
-    _ -> GT
-
 data DeepTree l where
   DeepTree_Empty
     :: DeepTree l
@@ -286,33 +206,6 @@ data DeepTree l where
     -> DeepTree ('Level_Branch l)
     -> DigitN l
     -> DeepTree l
-
-instance (Eq Elem, Eq Measure) => Eq (DeepTree l) where
-  a == b = case (a, b) of
-    (DeepTree_Empty, DeepTree_Empty) -> True
-    (DeepTree_Single x, DeepTree_Single y) -> x == y
-    (DeepTree_Deep m1 pr1 t1 sf1, DeepTree_Deep m2 pr2 t2 sf2)
-      -> m1 == m2
-      && eqDigitN pr1 pr2
-      && t1 == t2
-      && eqDigitN sf1 sf2
-    (_, _) -> False
-
-instance (Ord Elem, Ord Measure) => Ord (DeepTree l) where
-  compare a b = case (a, b) of
-    (DeepTree_Empty, DeepTree_Empty) -> EQ
-    (DeepTree_Empty, _) -> LT
-    (DeepTree_Single _, DeepTree_Empty) -> GT
-    (DeepTree_Single x, DeepTree_Single y) -> compare x y
-    (DeepTree_Single _, _) -> LT
-    (DeepTree_Deep m1 pr1 t1 sf1, DeepTree_Deep m2 pr2 t2 sf2)
-      -> mconcat
-        [ compare m1 m2
-        , compareDigitN pr1 pr2
-        , compare t1 t2
-        , compareDigitN sf1 sf2
-        ]
-    (DeepTree_Deep _ _ _ _, _) -> GT
 
 measureDeepTree :: DeepTree l -> Measure
 measureDeepTree = \case
@@ -359,31 +252,10 @@ rnfNode = \case
   Node_Branch3 m x y z -> rnf m `seq` rnfNode x `seq` rnfNode y `seq` rnfNode z
 
 instance (Eq Elem, Eq Measure) => Eq FingerTree where
-  a == b = case (a, b) of
-    (FingerTree_Empty, FingerTree_Empty) -> True
-    (FingerTree_Single x, FingerTree_Single y) -> x == y
-    (FingerTree_Deep m1 pr1 t1 sf1, FingerTree_Deep m2 pr2 t2 sf2)
-      -> m1 == m2
-      && eqDigitL pr1 pr2
-      && t1 == t2
-      && eqDigitL sf1 sf2
-    (_, _) -> False
+  a == b = otoList a == otoList b
 
 instance (Ord Elem, Ord Measure) => Ord FingerTree where
-  compare a b = case (a, b) of
-    (FingerTree_Empty, FingerTree_Empty) -> EQ
-    (FingerTree_Empty, _) -> LT
-    (FingerTree_Single _, FingerTree_Empty) -> GT
-    (FingerTree_Single x, FingerTree_Single y) -> compare x y
-    (FingerTree_Single _, _) -> LT
-    (FingerTree_Deep m1 pr1 t1 sf1, FingerTree_Deep m2 pr2 t2 sf2)
-      -> mconcat
-        [ compare m1 m2
-        , compareDigitL pr1 pr2
-        , compare t1 t2
-        , compareDigitL sf1 sf2
-        ]
-    (FingerTree_Deep _ _ _ _, _) -> GT
+  compare a b = compare (otoList a) (otoList b)
 
 measureFingerTree :: FingerTree -> Measure
 measureFingerTree = \case
@@ -600,7 +472,7 @@ ofoldlDigitN
   -> r
 ofoldlDigitN f x0 = \case
   OneN x -> ofoldlNode f x0 x
-  TwoN x y -> (ofoldlNode f $! ofoldlNode f x0 y) x
+  TwoN x y -> (ofoldlNode f $! ofoldlNode f x0 x) y
   ThreeN x y z -> (ofoldlNode f $! (ofoldlNode f $! ofoldlNode f x0 x) y) z
   FourN w x y z -> (ofoldlNode f $! (ofoldlNode f $! (ofoldlNode f $! ofoldlNode f x0 w) x) y) z
 
@@ -751,7 +623,7 @@ omapWithContextDigitN m0 m1 f = \case
         my = measureNode y
         mz = measureNode z
      in FourN
-          (omapWithContextNode m0 m1 f w)
+          (omapWithContextNode m0 (mx <> my <> mz <> m1) f w)
           (omapWithContextNode (m0 <> mw) (my <> mz <> m1) f x)
           (omapWithContextNode (m0 <> mw <> mx) (mz <> m1) f y)
           (omapWithContextNode (m0 <> mw <> mx <> my) m1 f z)
@@ -821,7 +693,7 @@ otraverseWithContextDigitL m0 m1 k f = \case
         my = measure y
         mz = measure z
      in withThreeL k
-          <*> f m0 x (mx <> my <> m1)
+          <*> f m0 x (my <> mz <> m1)
           <*> f (m0 <> mx) y (mz <> m1)
           <*> f (m0 <> mx <> my) z m1
   FourL w x y z ->
@@ -850,7 +722,8 @@ otraverseWithContextDeepTree m0 m1 f = \case
         mt = measureDeepTree t
         msf = measureDigitN sf
      in otraverseWithContextDigitN (m0 <> mpr <> mt) m1
-          (otraverseWithContextDigitN m0 (mt <> msf <> m1) (pure deepN) f pr <*> otraverseWithContextDeepTree mpr msf f t) f sf
+          (otraverseWithContextDigitN m0 (mt <> msf <> m1) (pure deepN) f pr
+             <*> otraverseWithContextDeepTree (m0 <> mpr) (msf <> m1) f t) f sf
 
 otraverseWithContextDigitN
   :: Applicative f
@@ -871,7 +744,7 @@ otraverseWithContextDigitN m0 m1 k f = \case
         my = measureNode y
         mz = measureNode z
      in withThreeN k
-          <*> otraverseWithContextNode m0 (mx <> my <> m1) f x
+          <*> otraverseWithContextNode m0 (my <> mz <> m1) f x
           <*> otraverseWithContextNode (m0 <> mx) (mz <> m1) f y
           <*> otraverseWithContextNode (m0 <> mx <> my) m1 f z
   FourN w x y z ->
@@ -1859,7 +1732,7 @@ reverse = \case
 reverseDeep :: (Node l -> Node l) -> DeepTree l -> DeepTree l
 reverseDeep f = \case
   DeepTree_Empty -> DeepTree_Empty
-  DeepTree_Single x -> DeepTree_Single x
+  DeepTree_Single x -> DeepTree_Single (f x)
   DeepTree_Deep _ pr t sf -> deepN
     (reverseDigitN f sf)
     (reverseDeep (reverseNode f) t)
@@ -1892,3 +1765,183 @@ reverseLeaf = \case
 illegal_argument :: String -> a
 illegal_argument name =
     error $ "Logic error: " ++ name ++ " called with illegal argument"
+
+-- Testing
+
+instance Arbitrary Elem =>Arbitrary FingerTree where
+  arbitrary = sized arb
+   where
+    arb :: Int -> Gen FingerTree
+    arb = \case
+      0 -> pure FingerTree_Empty
+      1 -> FingerTree_Single <$> arbitrary
+      n -> arbitraryDigitL (arbitraryDigitL (pure deepL) <*> arbDeepTree LevelS_Leaf (n `div` 2))
+    arbDeepTree :: LevelS l -> Int -> Gen (DeepTree l)
+    arbDeepTree s = \case
+      0 -> pure DeepTree_Empty
+      1 -> DeepTree_Single <$> arbitraryNode s
+      n -> arbitraryDigitN s (arbitraryDigitN s (pure deepN) <*> arbDeepTree (LevelS_Branch s) (n `div` 2))
+    arbitraryDigitL :: Gen (DigitL -> k) -> Gen k
+    arbitraryDigitL k = oneof
+      [ withOneL k <*> arbitrary
+      , withTwoL k <*> arbitrary <*> arbitrary
+      , withThreeL k <*> arbitrary <*> arbitrary <*> arbitrary
+      , withFourL k <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+      ]
+    arbitraryDigitN :: LevelS l -> Gen (DigitN l -> k) -> Gen k
+    arbitraryDigitN s k = oneof
+      [ withOneN k <*> arbitraryNode s
+      , withTwoN k <*> arbitraryNode s <*> arbitraryNode s
+      , withThreeN k <*> arbitraryNode s <*> arbitraryNode s <*> arbitraryNode s
+      , withFourN k <*> arbitraryNode s <*> arbitraryNode s <*> arbitraryNode s <*> arbitraryNode s
+      ]
+    arbitraryNode :: LevelS l -> Gen (Node l)
+    arbitraryNode = \case
+      LevelS_Leaf -> oneof
+        [ node2L <$> arbitrary <*> arbitrary
+        , node3L <$> arbitrary <*> arbitrary <*> arbitrary
+        ]
+      LevelS_Branch s -> oneof
+        [ node2N <$> arbitraryNode s <*> arbitraryNode s
+        , node3N <$> arbitraryNode s <*> arbitraryNode s <*> arbitraryNode s
+        ]
+  -- TODO: Implement shrink
+
+validateMeasures
+  :: Eq Measure
+  => FingerTree
+  -> Bool
+validateMeasures t = case t of
+  FingerTree_Empty -> measureFingerTree t == mempty
+  FingerTree_Single x -> measureFingerTree t == measure x
+  FingerTree_Deep s pr t' sf ->
+       (s == measureDigitL pr <> measureDeepTree t' <> measureDigitL sf)
+    && validateDeepTree t'
+ where
+  validateDeepTree :: DeepTree l -> Bool
+  validateDeepTree d = case d of
+    DeepTree_Empty -> measureDeepTree d == mempty
+    DeepTree_Single x -> measureDeepTree d == measureNode x
+    DeepTree_Deep s pr d' sf ->
+         (s == measureDigitN pr <> measureDeepTree d' <> measureDigitN sf)
+      && validateDigitN pr && validateDeepTree d' && validateDigitN sf
+  validateDigitN = \case
+    OneN x -> validateNode x
+    TwoN x y -> validateNode x && validateNode y
+    ThreeN x y z -> validateNode x && validateNode y && validateNode z
+    FourN w x y z -> validateNode w && validateNode x && validateNode y && validateNode z
+  validateNode :: Node l -> Bool
+  validateNode = \case
+    Node_Leaf2 s x y -> s == measure x <> measure y
+    Node_Leaf3 s x y z -> s == measure x <> measure y <> measure z
+    Node_Branch2 s x y -> s == measureNode x <> measureNode y
+    Node_Branch3 s x y z -> s == measureNode x <> measureNode y <> measureNode z
+
+{-
+deriving instance Show Elem => Show SearchResult
+instance Show Elem => Show FingerTree where
+  showsPrec p xs = showParen (p > 10) $
+    showString "fromList " . shows (otoList xs)
+-}
+
+deriving instance (Show Elem, Show Measure) => Show SearchResult
+
+instance (Show Elem, Show Measure) => Show FingerTree where
+  showsPrec p' xs = showParen (p' > 10) $ case xs of
+    FingerTree_Empty -> showString "FingerTree_Empty"
+    FingerTree_Single x -> showString "FingerTree_Single " . showsPrec 11 x
+    FingerTree_Deep m pr t sf -> showString "FingerTree_Deep "
+      . showsPrec 11 m
+      . showString " "
+      . showsPrecDigitL 11 pr
+      . showString " "
+      . showsPrecDeepTree 11 t
+      . showString " "
+      . showsPrecDigitL 11 sf
+   where
+    showsPrecDigitL :: Int -> DigitL -> ShowS
+    showsPrecDigitL p d = showParen (p > 10) $ case d of
+      OneL x -> showString "OneL "
+        . showsPrec 11 x
+      TwoL x y -> showString "TwoL "
+        . showsPrec 11 x
+        . showString " "
+        . showsPrec 11 y
+      ThreeL x y z -> showString "ThreeL "
+        . showsPrec 11 x
+        . showString " "
+        . showsPrec 11 y
+        . showString " "
+        . showsPrec 11 z
+      FourL w x y z -> showString "FourL "
+        . showsPrec 11 w
+        . showString " "
+        . showsPrec 11 x
+        . showString " "
+        . showsPrec 11 y
+        . showString " "
+        . showsPrec 11 z
+    showsPrecDigitN :: Int -> DigitN l -> ShowS
+    showsPrecDigitN p d = showParen (p > 10) $ case d of
+      OneN x -> showString "OneN "
+              . showsPrecNode 11 x
+      TwoN x y -> showString "TwoN "
+        . showsPrecNode 11 x
+        . showString " "
+        . showsPrecNode 11 y
+      ThreeN x y z -> showString "ThreeN "
+        . showsPrecNode 11 x
+        . showString " "
+        . showsPrecNode 11 y
+        . showString " "
+        . showsPrecNode 11 z
+      FourN w x y z -> showString "FourN "
+        . showsPrecNode 11 w
+        . showString " "
+        . showsPrecNode 11 x
+        . showString " "
+        . showsPrecNode 11 y
+        . showString " "
+        . showsPrecNode 11 z
+    showsPrecDeepTree :: Int -> DeepTree l -> ShowS
+    showsPrecDeepTree p t = showParen (p > 10) $ case t of
+      DeepTree_Empty -> showString "DeepTree_Empty"
+      DeepTree_Single x -> showString "DeepTree_Single " . showsPrecNode 11 x
+      DeepTree_Deep m pr t' sf -> showString "DeepTree_Deep "
+        . showsPrec 11 m
+        . showString " "
+        . showsPrecDigitN 11 pr
+        . showString " "
+        . showsPrecDeepTree 11 t'
+        . showString " "
+        . showsPrecDigitN 11 sf
+    showsPrecNode :: Int -> Node l -> ShowS
+    showsPrecNode p n = showParen (p > 10) $ case n of
+      Node_Leaf2 m x y -> showString "Node_Leaf2 "
+        . showsPrec 11 m
+        . showString " "
+        . showsPrec 11 x
+        . showString " "
+        . showsPrec 11 y
+      Node_Leaf3 m x y z -> showString "Node_Leaf3 "
+        . showsPrec 11 m
+        . showString " "
+        . showsPrec 11 x
+        . showString " "
+        . showsPrec 11 y
+        . showString " "
+        . showsPrec 11 z
+      Node_Branch2 m x y -> showString "Node_Branch2 "
+        . showsPrec 11 m
+        . showString " "
+        . showsPrecNode 11 x
+        . showString " "
+        . showsPrecNode 11 y
+      Node_Branch3 m x y z -> showString "Node_Branch3 "
+        . showsPrec 11 m
+        . showString " "
+        . showsPrecNode 11 x
+        . showString " "
+        . showsPrecNode 11 y
+        . showString " "
+        . showsPrecNode 11 z
