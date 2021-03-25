@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -17,6 +18,7 @@ module FingerTree
   ( Elem
   , Measure
   , FingerTree
+  , measureFingerTree
   , empty
   , singleton
   , (<|)
@@ -33,6 +35,8 @@ module FingerTree
   , split
   , takeUntil
   , dropUntil
+  , lookup
+  , lookupOrd
   , reverse
   , omapWithPos
   , omapWithContext
@@ -43,7 +47,7 @@ module FingerTree
   ) where
 
 import Control.DeepSeq
-import Prelude hiding (null, reverse)
+import Prelude hiding (null, reverse, lookup)
 import Data.MonoTraversable
 import GHC.Generics
 
@@ -134,30 +138,18 @@ node2N a b = Node_Branch2 (measureNode a <> measureNode b) a b
 node3N :: Node l -> Node l -> Node l -> Node ('Level_Branch l)
 node3N a b c = Node_Branch3 (measureNode a <> measureNode b <> measureNode c) a b c
 
-type DigitN l =
-  (# Node l
-  | (# Node l, Node l #)
-  | (# Node l, Node l, Node l #)
-  | (# Node l, Node l, Node l, Node l #)
-  #)
-
-pattern OneN :: forall (l :: Level). Node l -> DigitN l
-pattern OneN x = (# x | | | #) :: DigitN l
-pattern TwoN :: forall (l :: Level). Node l -> Node l -> DigitN l
-pattern TwoN x y = (# | (# x, y #) | | #) :: DigitN l
-pattern ThreeN :: forall (l :: Level). Node l -> Node l -> Node l -> DigitN l
-pattern ThreeN x y z = (# | | (# x, y, z #) | #) :: DigitN l
-pattern FourN :: forall (l :: Level). Node l -> Node l -> Node l -> Node l -> DigitN l
-pattern FourN w x y z = (# | | | (# w, x, y, z #) #) :: DigitN l
-
-{-# COMPLETE OneN, TwoN, ThreeN, FourN #-}
+data DigitN l
+   = OneN !(Node l)
+   | TwoN !(Node l) !(Node l)
+   | ThreeN !(Node l) !(Node l) !(Node l)
+   | FourN !(Node l) !(Node l) !(Node l) !(Node l)
 
 measureDigitN :: DigitN l -> Measure
 measureDigitN = \case
-  (# x | | | #) -> measureNode x
-  (# | (# x, y #) | | #) -> measureNode x <> measureNode y
-  (# | | (# x, y, z #) | #) -> measureNode x <> measureNode y <> measureNode z
-  (# | | | (# w, x, y, z #) #) -> measureNode w <> measureNode x <> measureNode y <> measureNode z
+  OneN x -> measureNode x
+  TwoN x y -> measureNode x <> measureNode y
+  ThreeN x y z -> measureNode x <> measureNode y <> measureNode z
+  FourN w x y z -> measureNode w <> measureNode x <> measureNode y <> measureNode z
 
 type DigitL =
   (# Elem
@@ -186,8 +178,8 @@ measureDigitL = \case
 
 nodeToDigitN :: Node ('Level_Branch l) -> DigitN l
 nodeToDigitN = \case
-  Node_Branch2 _ x y -> (# | (# x, y #) | | #)
-  Node_Branch3 _ x y z -> (# | | (# x, y, z #) | #)
+  Node_Branch2 _ x y -> TwoN x y
+  Node_Branch3 _ x y z -> ThreeN x y z
 
 nodeToDigitL :: Node 'Level_Leaf -> DigitL
 nodeToDigitL = \case
@@ -1071,13 +1063,13 @@ addDigitsL0 m1 (FourL a b c d) (FourL e f g h) m2 =
     appendTree3 m1 (node3L a b c) (node3L d e f) (node2L g h) m2
 
 appendTree1 :: DeepTree l -> Node l -> DeepTree l -> DeepTree l
-appendTree1 DeepTree_Empty a xs =
+appendTree1 DeepTree_Empty !a xs =
     a <<| xs
 appendTree1 xs a DeepTree_Empty =
     xs |>> a
-appendTree1 (DeepTree_Single x) a xs =
+appendTree1 (DeepTree_Single x) !a xs =
     x <<| a <<| xs
-appendTree1 xs a (DeepTree_Single x) =
+appendTree1 xs !a (DeepTree_Single x) =
     xs |>> a |>> x
 appendTree1 (DeepTree_Deep _ pr1 m1 sf1) a (DeepTree_Deep _ pr2 m2 sf2) =
     deepN pr1 (addDigits1 m1 sf1 a pr2 m2) sf2
@@ -1117,11 +1109,11 @@ addDigits1 m1 (FourN a b c d) e (FourN f g h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
 
 appendTree2 :: DeepTree l -> Node l -> Node l -> DeepTree l -> DeepTree l
-appendTree2 DeepTree_Empty a b xs =
+appendTree2 DeepTree_Empty !a !b xs =
     a <<| b <<| xs
-appendTree2 xs a b DeepTree_Empty =
+appendTree2 xs !a !b DeepTree_Empty =
     xs |>> a |>> b
-appendTree2 (DeepTree_Single x) a b xs =
+appendTree2 (DeepTree_Single x) !a !b xs =
     x <<| a <<| b <<| xs
 appendTree2 xs a b (DeepTree_Single x) =
     xs |>> a |>> b |>> x
@@ -1163,9 +1155,9 @@ addDigits2 m1 (FourN a b c d) e f (FourN g h i j) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node2N g h) (node2N i j) m2
 
 appendTree3 :: DeepTree l -> Node l -> Node l -> Node l -> DeepTree l -> DeepTree l
-appendTree3 DeepTree_Empty a b c xs =
+appendTree3 DeepTree_Empty !a !b !c xs =
     a <<| b <<| c <<| xs
-appendTree3 xs a b c DeepTree_Empty =
+appendTree3 xs !a !b !c DeepTree_Empty =
     xs |>> a |>> b |>> c
 appendTree3 (DeepTree_Single x) a b c xs =
     x <<| a <<| b <<| c <<| xs
@@ -1209,9 +1201,9 @@ addDigits3 m1 (FourN a b c d) e f g (FourN h i j k) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node3N g h i) (node2N j k) m2
 
 appendTree4 :: DeepTree l -> Node l -> Node l -> Node l -> Node l -> DeepTree l -> DeepTree l
-appendTree4 DeepTree_Empty a b c d xs =
+appendTree4 DeepTree_Empty !a !b !c !d xs =
     a <<| b <<| c <<| d <<| xs
-appendTree4 xs a b c d DeepTree_Empty =
+appendTree4 xs !a !b !c !d DeepTree_Empty =
     xs |>> a |>> b |>> c |>> d
 appendTree4 (DeepTree_Single x) a b c d xs =
     x <<| a <<| b <<| c <<| d <<| xs
@@ -1265,7 +1257,7 @@ data Split t a = Split t a t
 -- | A result of 'search', attempting to find a point where a predicate
 -- on splits of the sequence changes from 'False' to 'True'.
 data SearchResult
-    = Position FingerTree Elem FingerTree
+    = Position FingerTree {-# UNPACK #-} !Elem FingerTree
         -- ^ A tree opened at a particular element: the prefix to the
         -- left, the element, and the suffix to the right.
     | OnLeft
@@ -1555,7 +1547,7 @@ split p xs
 --
 -- *  @'takeUntil' p t = 'fst' ('split' p t)@
 takeUntil :: (Measure -> Bool) -> FingerTree -> FingerTree
-takeUntil p  =  fst . split p
+takeUntil p = fst . split p
 
 -- | /O(log(min(i,n-i)))/.
 -- Given a monotonic predicate @p@, @'dropUntil' p t@ is the rest of @t@
@@ -1563,7 +1555,7 @@ takeUntil p  =  fst . split p
 --
 -- * @'dropUntil' p t = 'snd' ('split' p t)@
 dropUntil :: (Measure -> Bool) -> FingerTree -> FingerTree
-dropUntil p =  snd . split p
+dropUntil p = snd . split p
 
 splitTree :: (Measure -> Bool) -> Measure -> FingerTree -> Split FingerTree Elem
 splitTree p i = \case
@@ -1714,6 +1706,244 @@ splitDigitN p i = \case
     -> Split (JustN (TwoN a b)) c (JustN (OneN d))
     | otherwise
     -> Split (JustN (ThreeN a b c)) d NothingN
+
+{-# INLINABLE lookup #-}
+lookup :: (Measure -> Bool) -> FingerTree -> Maybe Elem
+lookup p
+  | p mempty = const Nothing
+  | otherwise = \case
+    FingerTree_Empty -> Nothing
+    FingerTree_Single x -> case p (measure x) of
+      True -> Just x
+      False -> Nothing
+    FingerTree_Deep m pr t sf -> case p m of
+      False -> Nothing
+      True
+        | p mpr
+        -> Just $! lookupDigitL p mempty pr
+        | p mt
+        -> Just $! lookupDeepTree p mpr t
+        | otherwise
+        -> Just $! lookupDigitL p mt sf
+     where
+      mpr = measureDigitL pr
+      mt = mpr <> measureDeepTree t
+
+-- Precondition: The predicate is definitely satisfied for some contained element
+lookupDigitL :: (Measure -> Bool) -> Measure -> DigitL -> Elem
+lookupDigitL p m0 = \case
+  OneL x -> x
+  TwoL x y
+    | p mx -> x
+    | otherwise -> y
+   where
+    mx = m0 <> measure x
+  ThreeL x y z
+    | p mx -> x
+    | p my -> y
+    | otherwise -> z
+   where
+    mx = m0 <> measure x
+    my = mx <> measure y
+  FourL w x y z
+    | p mw -> w
+    | p mx -> x
+    | p my -> y
+    | otherwise -> z
+   where
+    mw = m0 <> measure w
+    mx = mw <> measure x
+    my = mx <> measure y
+
+-- Precondition: The predicate is definitely satisfied for some contained element
+lookupDeepTree :: (Measure -> Bool) -> Measure -> DeepTree l -> Elem
+lookupDeepTree p m0 = \case
+  DeepTree_Empty -> illegal_argument "lookupDeepTree"
+  DeepTree_Single n -> lookupNode p m0 n
+  DeepTree_Deep _ pr t sf
+    | p mpr
+    -> lookupDigitN p m0 pr
+    | p mt
+    -> lookupDeepTree p mpr t
+    | otherwise
+    -> lookupDigitN p mt sf
+   where
+    mpr = m0 <> measureDigitN pr
+    mt = mpr <> measureDeepTree t
+
+-- Precondition: The predicate is definitely satisfied for some contained element
+lookupDigitN :: (Measure -> Bool) -> Measure -> DigitN l -> Elem
+lookupDigitN p m0 = \case
+  OneN x -> lookupNode p m0 x
+  TwoN x y
+    | p mx -> lookupNode p m0 x
+    | otherwise -> lookupNode p mx y
+   where
+    mx = m0 <> measureNode x
+  ThreeN x y z
+    | p mx -> lookupNode p m0 x
+    | p my -> lookupNode p mx y
+    | otherwise -> lookupNode p my z
+   where
+    mx = m0 <> measureNode x
+    my = mx <> measureNode y
+  FourN w x y z
+    | p mw -> lookupNode p m0 w
+    | p mx -> lookupNode p mw x
+    | p my -> lookupNode p mx y
+    | otherwise -> lookupNode p my z
+   where
+    mw = m0 <> measureNode w
+    mx = mw <> measureNode x
+    my = mx <> measureNode y
+
+-- Precondition: The predicate is definitely satisfied for some contained element
+lookupNode :: (Measure -> Bool) -> Measure -> Node l -> Elem
+lookupNode p m0 = \case
+  Node_Leaf2 _ x y
+    | p mx -> x
+    | otherwise -> y
+   where
+    mx = m0 <> measure x
+  Node_Leaf3 _ x y z
+    | p mx -> x
+    | p my -> y
+    | otherwise -> z
+   where
+    mx = m0 <> measure x
+    my = mx <> measure y
+  Node_Branch2 _ x y
+    | p mx -> lookupNode p m0 x
+    | otherwise -> lookupNode p mx y
+   where
+    mx = m0 <> measureNode x
+  Node_Branch3 _ x y z
+    | p mx -> lookupNode p m0 x
+    | p my -> lookupNode p mx y
+    | otherwise -> lookupNode p my z
+   where
+    mx = m0 <> measureNode x
+    my = mx <> measureNode y
+
+-- | If Measure is ordered and that order is compatible with its monoid structure
+-- then we can look up the element at the point in the 'FingerTree' where the measure
+-- exceeds some threshold.
+lookupOrd :: Ord Measure => Measure -> FingerTree -> Maybe Elem
+lookupOrd i
+  | i < mempty = const Nothing
+  | otherwise = \case
+    FingerTree_Empty -> Nothing
+    FingerTree_Single x -> case i < measure x of
+      True -> Just x
+      False -> Nothing
+    FingerTree_Deep m pr t sf -> case i < m of
+      False -> Nothing
+      True
+        | i < mpr
+        -> Just $! lookupDigitLOrd i mempty pr
+        | i < mt
+        -> Just $! lookupDeepTreeOrd i mpr t
+        | otherwise
+        -> Just $! lookupDigitLOrd i mt sf
+     where
+      mpr = measureDigitL pr
+      mt = mpr <> measureDeepTree t
+
+-- Precondition: The index is definitely smaller than the measure of the digit + prefix
+lookupDigitLOrd :: Ord Measure => Measure -> Measure -> DigitL -> Elem
+lookupDigitLOrd i m0 = \case
+  OneL x -> x
+  TwoL x y
+    | i < mx -> x
+    | otherwise -> y
+   where
+    mx = m0 <> measure x
+  ThreeL x y z
+    | i < mx -> x
+    | i < my -> y
+    | otherwise -> z
+   where
+    mx = m0 <> measure x
+    my = mx <> measure y
+  FourL w x y z
+    | i < mw -> w
+    | i < mx -> x
+    | i < my -> y
+    | otherwise -> z
+   where
+    mw = m0 <> measure w
+    mx = mw <> measure x
+    my = mx <> measure y
+
+-- Precondition: The index is definitely smaller than the measure of the tree + prefix
+lookupDeepTreeOrd :: Ord Measure => Measure -> Measure -> DeepTree l -> Elem
+lookupDeepTreeOrd i m0 = \case
+  DeepTree_Empty -> illegal_argument "lookupDeepTree"
+  DeepTree_Single n -> lookupNodeOrd i m0 n
+  DeepTree_Deep _ pr t sf
+    | i < mpr
+    -> lookupDigitNOrd i m0 pr
+    | i < mt
+    -> lookupDeepTreeOrd i mpr t
+    | otherwise
+    -> lookupDigitNOrd i mt sf
+   where
+    mpr = m0 <> measureDigitN pr
+    mt = mpr <> measureDeepTree t
+
+-- Precondition: The index is definitely smaller than the measure of the digit + prefix
+lookupDigitNOrd :: Ord Measure => Measure -> Measure -> DigitN l -> Elem
+lookupDigitNOrd i m0 = \case
+  OneN x -> lookupNodeOrd i m0 x
+  TwoN x y
+    | i < mx -> lookupNodeOrd i m0 x
+    | otherwise -> lookupNodeOrd i mx y
+   where
+    mx = m0 <> measureNode x
+  ThreeN x y z
+    | i < mx -> lookupNodeOrd i m0 x
+    | i < my -> lookupNodeOrd i mx y
+    | otherwise -> lookupNodeOrd i my z
+   where
+    mx = m0 <> measureNode x
+    my = mx <> measureNode y
+  FourN w x y z
+    | i < mw -> lookupNodeOrd i m0 w
+    | i < mx -> lookupNodeOrd i mw x
+    | i < my -> lookupNodeOrd i mx y
+    | otherwise -> lookupNodeOrd i my z
+   where
+    mw = m0 <> measureNode w
+    mx = mw <> measureNode x
+    my = mx <> measureNode y
+
+-- Precondition: The index is definitely smaller than the measure of the node + prefix
+lookupNodeOrd :: Ord Measure => Measure -> Measure -> Node l -> Elem
+lookupNodeOrd i m0 = \case
+  Node_Leaf2 _ x y
+    | i < mx -> x
+    | otherwise -> y
+   where
+    mx = m0 <> measure x
+  Node_Leaf3 _ x y z
+    | i < mx -> x
+    | i < my -> y
+    | otherwise -> z
+   where
+    mx = m0 <> measure x
+    my = mx <> measure y
+  Node_Branch2 _ x y
+    | i < mx -> lookupNodeOrd i m0 x
+    | otherwise -> lookupNodeOrd i mx y
+   where
+    mx = m0 <> measureNode x
+  Node_Branch3 _ x y z
+    | i < mx -> lookupNodeOrd i m0 x
+    | i < my -> lookupNodeOrd i mx y
+    | otherwise -> lookupNodeOrd i my z
+   where
+    mx = m0 <> measureNode x
+    my = mx <> measureNode y
 
 ------------------
 -- Transformations
@@ -1945,3 +2175,74 @@ instance (Show Elem, Show Measure) => Show FingerTree where
         . showsPrecNode 11 y
         . showString " "
         . showsPrecNode 11 z
+
+{-
+todo list
+
+* reasonable for all fingertrees, maybe
+fromFunction
+fromArray
+replicate
+replicateA
+cycleTaking
+iterateN
+unfoldr
+unfoldl
+scanl
+scanl1
+scanr
+scanr1
+takeWhileL
+takeWhileR
+dropWhileL
+dropWhileR
+spanl
+spanr
+breakl
+breakr
+partition
+filter
+filterWithPos
+filterWithContext
+sort
+sortBy
+sortOn
+unstableSort
+unstableSortBy
+unstableSortOn
+
+* sequence specific
+length
+index
+adjust
+adjust'
+update
+insertAt
+deleteAt
+splitAt
+elemIndexL
+elemIndicesL
+elemIndexR
+elemIndicesR
+findIndexL
+findIndicesL
+findIndexR
+findIndicesR
+foldMapWithIndex
+foldlWithIndex
+foldrWithIndex
+omapWithIndex
+otraverseWithIndex
+
+* element type changing
+tails
+inits
+chunksOf
+zip
+zipWith
+zip3
+zip4
+zipWith4
+unzip
+unzipWith
+-}

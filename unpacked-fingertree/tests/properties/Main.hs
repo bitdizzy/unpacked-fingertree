@@ -2,10 +2,11 @@
 {-# LANGUAGE TypeApplications #-}
 module Main (main) where
 
-import Prelude hiding (null, reverse)
+import Prelude hiding (null, reverse, lookup)
 
 import Control.Monad.State
 import qualified Data.List as List
+import qualified Safe as List (atMay)
 import Data.MonoTraversable
 
 import Test.FingerTree
@@ -44,6 +45,7 @@ properties = testGroup "list operations" $
   , testProperty "split" prop_split
   , testProperty "takeUntil" prop_takeUntil
   , testProperty "dropUntil" prop_dropUntil
+  , testProperty "lookup" prop_lookup
   , testProperty "reverse" prop_reverse
   , testProperty "omapWithPos" prop_omapWithPos
   , testProperty "omapWithContext" prop_omapWithContext
@@ -130,10 +132,11 @@ prop_snoc xs x =
 prop_mempty :: Bool
 prop_mempty = otoList @FingerTree mempty == mempty
 
-prop_mappend :: FingerTree -> FingerTree -> Bool
-prop_mappend xs ys =
-  let xys = xs <> ys
-   in validateMeasures xys && otoList xys == (otoList xs <> otoList ys)
+prop_mappend :: Gen Bool
+prop_mappend = do
+  xss <- replicateM 100 arbitrary
+  let xs = foldMap fromList xss
+  pure $ otoList xs == foldMap id xss
 
 prop_fromList :: [Elem] -> Bool
 prop_fromList xs =
@@ -185,6 +188,12 @@ prop_dropUntil n xs =
   let f = (> n) . List.length
       xs' = dropUntil f xs
    in validateMeasures xs' && otoList xs' == drop n (otoList xs)
+
+prop_lookup :: Int -> FingerTree -> Bool
+prop_lookup n xs =
+  let f = (> n) . List.length
+      x = lookup f xs
+   in x == flip List.atMay n (otoList xs)
 
 prop_reverse :: FingerTree -> Bool
 prop_reverse xs = otoList (reverse xs) == List.reverse (otoList xs)

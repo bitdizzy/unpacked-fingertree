@@ -57,6 +57,7 @@ test-suite properties
                , mono-traversable
                , mtl
                , list-measure
+               , safe
                , tasty
                , tasty-quickcheck
                , transformers
