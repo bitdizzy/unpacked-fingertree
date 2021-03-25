@@ -1026,7 +1026,9 @@ s >< t = case (s, t) of
   (FingerTree_Single x, xs) -> x <| xs
   (xs, FingerTree_Single x) -> xs |> x
   (FingerTree_Deep _ pr1 x1 sf1, FingerTree_Deep _ pr2 x2 sf2) ->
-    deepL pr1 (addDigitsL0 x1 sf1 pr2 x2) sf2
+    deepL pr1 t' sf2
+   where
+    !t' = addDigitsL0 x1 sf1 pr2 x2
 
 addDigitsL0 :: DeepTree 'Level_Leaf -> DigitL -> DigitL -> DeepTree 'Level_Leaf -> DeepTree 'Level_Leaf
 addDigitsL0 m1 (OneL a) (OneL b) m2 =
@@ -1064,15 +1066,17 @@ addDigitsL0 m1 (FourL a b c d) (FourL e f g h) m2 =
 
 appendTree1 :: DeepTree l -> Node l -> DeepTree l -> DeepTree l
 appendTree1 DeepTree_Empty !a xs =
-    a <<| xs
+  a <<| xs
 appendTree1 xs a DeepTree_Empty =
-    xs |>> a
+  xs |>> a
 appendTree1 (DeepTree_Single x) !a xs =
-    x <<| a <<| xs
+  x <<| a <<| xs
 appendTree1 xs !a (DeepTree_Single x) =
-    xs |>> a |>> x
+  xs |>> a |>> x
 appendTree1 (DeepTree_Deep _ pr1 m1 sf1) a (DeepTree_Deep _ pr2 m2 sf2) =
-    deepN pr1 (addDigits1 m1 sf1 a pr2 m2) sf2
+  deepN pr1 t sf2
+ where
+  !t = addDigits1 m1 sf1 a pr2 m2
 
 addDigits1 :: DeepTree ('Level_Branch l) -> DigitN l -> Node l -> DigitN l -> DeepTree ('Level_Branch l) -> DeepTree ('Level_Branch l)
 addDigits1 m1 (OneN a) b (OneN c) m2 =
@@ -1164,7 +1168,9 @@ appendTree3 (DeepTree_Single x) a b c xs =
 appendTree3 xs a b c (DeepTree_Single x) =
     xs |>> a |>> b |>> c |>> x
 appendTree3 (DeepTree_Deep _ pr1 m1 sf1) a b c (DeepTree_Deep _ pr2 m2 sf2) =
-    deepN pr1 (addDigits3 m1 sf1 a b c pr2 m2) sf2
+  deepN pr1 t sf2
+ where
+  !t = addDigits3 m1 sf1 a b c pr2 m2
 
 addDigits3 :: DeepTree ('Level_Branch l) -> DigitN l -> Node l -> Node l -> Node l -> DigitN l -> DeepTree ('Level_Branch l) -> DeepTree ('Level_Branch l)
 addDigits3 m1 (OneN a) b c d (OneN e) m2 =
@@ -1210,7 +1216,9 @@ appendTree4 (DeepTree_Single x) a b c d xs =
 appendTree4 xs a b c d (DeepTree_Single x) =
     xs |>> a |>> b |>> c |>> d |>> x
 appendTree4 (DeepTree_Deep _ pr1 m1 sf1) a b c d (DeepTree_Deep _ pr2 m2 sf2) =
-    deepN pr1 (addDigits4 m1 sf1 a b c d pr2 m2) sf2
+    deepN pr1 t sf2
+ where
+  !t = addDigits4 m1 sf1 a b c d pr2 m2
 
 addDigits4 :: DeepTree ('Level_Branch l) -> DigitN l -> Node l -> Node l -> Node l -> Node l -> DigitN l -> DeepTree ('Level_Branch l) -> DeepTree ('Level_Branch l)
 addDigits4 m1 (OneN a) b c d e (OneN f) m2 =
