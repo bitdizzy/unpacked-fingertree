@@ -1,9 +1,9 @@
+cabal-version: 3.0
 name:          unpacked-fingertree
 category:      Language
 version:       0
-license:       BSD2
+license:       BSD-3-Clause
 -- license-file:  LICENSE
-cabal-version: 2.0
 author:        bitdizzy
 maintainer:    bitdizzy <dev@bitdizzy.io>
 stability:     experimental
@@ -30,10 +30,12 @@ library
     Measured
   exposed-modules:
     FingerTree
+    FingerTree.Internal
 
   build-depends:
       base >= 4.10 && < 5
     , deepseq >= 1.4 && < 2
+    , groups
     , mono-traversable >= 1 && < 2
     , QuickCheck
 
@@ -61,4 +63,9 @@ test-suite properties
                , tasty
                , tasty-quickcheck
                , transformers
-  mixins: unpacked-fingertree (FingerTree as Test.FingerTree) requires (Measured as ListMeasure)
+  mixins: unpacked-fingertree
+            ( FingerTree as Test.FingerTree
+            , FingerTree.Internal as Test.FingerTree.Internal
+            ) requires
+            ( Measured as ListMeasure
+            )

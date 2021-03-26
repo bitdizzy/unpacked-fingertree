@@ -9,7 +9,7 @@ import qualified Data.List as List
 import qualified Safe as List (atMay)
 import Data.MonoTraversable
 
-import Test.FingerTree
+import Test.FingerTree.Internal
 
 import Test.Tasty
 import Test.Tasty.QuickCheck
