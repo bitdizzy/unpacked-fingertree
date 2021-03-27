@@ -763,7 +763,7 @@ fromList :: [Elem] -> FingerTree
 fromList = foldr (<|) FingerTree_Empty
 
 (<|) :: Elem -> FingerTree -> FingerTree
-a <| t = case t of
+(!a) <| t = case t of
   FingerTree_Empty -> FingerTree_Single a
   FingerTree_Single b -> deepL (OneL a) DeepTree_Empty (OneL b)
   FingerTree_Deep m (FourL b c d e) t' sf -> t' `seq` FingerTree_Deep
@@ -778,7 +778,7 @@ a <| t = case t of
     sf
 
 (|>) :: FingerTree -> Elem -> FingerTree
-t |> x = case t of
+t |> (!x) = case t of
   FingerTree_Empty -> FingerTree_Single x
   FingerTree_Single a -> deepL (OneL a) DeepTree_Empty (OneL x)
   FingerTree_Deep m pr t' (FourL a b c d) -> t `seq` FingerTree_Deep
@@ -792,7 +792,7 @@ t |> x = case t of
     (snocDigitL sf x)
 
 (<<|) :: Node l -> DeepTree l -> DeepTree l
-a <<| t = case t of
+(!a) <<| t = case t of
   DeepTree_Empty -> DeepTree_Single a
   DeepTree_Single b -> deepN (OneN a) DeepTree_Empty (OneN b)
   DeepTree_Deep m (FourN b c d e) t' sf -> t `seq` DeepTree_Deep
@@ -807,7 +807,7 @@ a <<| t = case t of
     sf
 
 (|>>) :: DeepTree l -> Node l -> DeepTree l
-t |>> x = case t of
+t |>> (!x) = case t of
   DeepTree_Empty -> DeepTree_Single x
   DeepTree_Single a -> deepN (OneN a) DeepTree_Empty (OneN x)
   DeepTree_Deep m pr t' (FourN a b c d) -> DeepTree_Deep
@@ -1038,7 +1038,7 @@ addDigitsL0 m1 (FourL a b c d) (FourL e f g h) m2 =
 appendTree1 :: DeepTree l -> Node l -> DeepTree l -> DeepTree l
 appendTree1 DeepTree_Empty !a xs =
   a <<| xs
-appendTree1 xs a DeepTree_Empty =
+appendTree1 xs !a DeepTree_Empty =
   xs |>> a
 appendTree1 (DeepTree_Single x) !a xs =
   x <<| a <<| xs
@@ -1085,15 +1085,17 @@ addDigits1 m1 (FourN a b c d) e (FourN f g h i) m2 =
 
 appendTree2 :: DeepTree l -> Node l -> Node l -> DeepTree l -> DeepTree l
 appendTree2 DeepTree_Empty !a !b xs =
-    a <<| b <<| xs
+  a <<| b <<| xs
 appendTree2 xs !a !b DeepTree_Empty =
-    xs |>> a |>> b
-appendTree2 (DeepTree_Single x) !a !b xs =
-    x <<| a <<| b <<| xs
+  xs |>> a |>> b
+appendTree2 (DeepTree_Single x) a b xs =
+  x <<| a <<| b <<| xs
 appendTree2 xs a b (DeepTree_Single x) =
-    xs |>> a |>> b |>> x
+  xs |>> a |>> b |>> x
 appendTree2 (DeepTree_Deep _ pr1 m1 sf1) a b (DeepTree_Deep _ pr2 m2 sf2) =
-    deepN pr1 (addDigits2 m1 sf1 a b pr2 m2) sf2
+  deepN pr1 m sf2
+ where
+  !m = addDigits2 m1 sf1 a b pr2 m2
 
 addDigits2 :: DeepTree ('Level_Branch l) -> DigitN l -> Node l -> Node l -> DigitN l -> DeepTree ('Level_Branch l) -> DeepTree ('Level_Branch l)
 addDigits2 m1 (OneN a) b c (OneN d) m2 =
@@ -1144,7 +1146,7 @@ appendTree3 (DeepTree_Deep _ pr1 m1 sf1) a b c (DeepTree_Deep _ pr2 m2 sf2) =
   !t = addDigits3 m1 sf1 a b c pr2 m2
 
 addDigits3 :: DeepTree ('Level_Branch l) -> DigitN l -> Node l -> Node l -> Node l -> DigitN l -> DeepTree ('Level_Branch l) -> DeepTree ('Level_Branch l)
-addDigits3 m1 (OneN a) b c d (OneN e) m2 =
+addDigits3 m1 (OneN a) !b !c !d (OneN e) m2 =
     appendTree2 m1 (node3N a b c) (node2N d e) m2
 addDigits3 m1 (OneN a) b c d (TwoN e f) m2 =
     appendTree2 m1 (node3N a b c) (node3N d e f) m2
@@ -1152,7 +1154,7 @@ addDigits3 m1 (OneN a) b c d (ThreeN e f g) m2 =
     appendTree3 m1 (node3N a b c) (node2N d e) (node2N f g) m2
 addDigits3 m1 (OneN a) b c d (FourN e f g h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
-addDigits3 m1 (TwoN a b) c d e (OneN f) m2 =
+addDigits3 m1 (TwoN a b) !c !d !e (OneN f) m2 =
     appendTree2 m1 (node3N a b c) (node3N d e f) m2
 addDigits3 m1 (TwoN a b) c d e (TwoN f g) m2 =
     appendTree3 m1 (node3N a b c) (node2N d e) (node2N f g) m2
@@ -1160,7 +1162,7 @@ addDigits3 m1 (TwoN a b) c d e (ThreeN f g h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
 addDigits3 m1 (TwoN a b) c d e (FourN f g h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
-addDigits3 m1 (ThreeN a b c) d e f (OneN g) m2 =
+addDigits3 m1 (ThreeN a b c) !d !e !f (OneN g) m2 =
     appendTree3 m1 (node3N a b c) (node2N d e) (node2N f g) m2
 addDigits3 m1 (ThreeN a b c) d e f (TwoN g h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
@@ -1168,7 +1170,7 @@ addDigits3 m1 (ThreeN a b c) d e f (ThreeN g h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
 addDigits3 m1 (ThreeN a b c) d e f (FourN g h i j) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node2N g h) (node2N i j) m2
-addDigits3 m1 (FourN a b c d) e f g (OneN h) m2 =
+addDigits3 m1 (FourN a b c d) !e !f !g (OneN h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
 addDigits3 m1 (FourN a b c d) e f g (TwoN h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
@@ -1191,8 +1193,9 @@ appendTree4 (DeepTree_Deep _ pr1 m1 sf1) a b c d (DeepTree_Deep _ pr2 m2 sf2) =
  where
   !t = addDigits4 m1 sf1 a b c d pr2 m2
 
+{-# INLINE addDigits4 #-}
 addDigits4 :: DeepTree ('Level_Branch l) -> DigitN l -> Node l -> Node l -> Node l -> Node l -> DigitN l -> DeepTree ('Level_Branch l) -> DeepTree ('Level_Branch l)
-addDigits4 m1 (OneN a) b c d e (OneN f) m2 =
+addDigits4 m1 (OneN a) !b !c !d !e (OneN f) m2 =
     appendTree2 m1 (node3N a b c) (node3N d e f) m2
 addDigits4 m1 (OneN a) b c d e (TwoN f g) m2 =
     appendTree3 m1 (node3N a b c) (node2N d e) (node2N f g) m2
@@ -1200,7 +1203,7 @@ addDigits4 m1 (OneN a) b c d e (ThreeN f g h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
 addDigits4 m1 (OneN a) b c d e (FourN f g h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
-addDigits4 m1 (TwoN a b) c d e f (OneN g) m2 =
+addDigits4 m1 (TwoN a b) !c !d !e !f (OneN g) m2 =
     appendTree3 m1 (node3N a b c) (node2N d e) (node2N f g) m2
 addDigits4 m1 (TwoN a b) c d e f (TwoN g h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
@@ -1208,7 +1211,7 @@ addDigits4 m1 (TwoN a b) c d e f (ThreeN g h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
 addDigits4 m1 (TwoN a b) c d e f (FourN g h i j) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node2N g h) (node2N i j) m2
-addDigits4 m1 (ThreeN a b c) d e f g (OneN h) m2 =
+addDigits4 m1 (ThreeN a b c) !d !e !f !g (OneN h) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node2N g h) m2
 addDigits4 m1 (ThreeN a b c) d e f g (TwoN h i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
@@ -1216,13 +1219,13 @@ addDigits4 m1 (ThreeN a b c) d e f g (ThreeN h i j) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node2N g h) (node2N i j) m2
 addDigits4 m1 (ThreeN a b c) d e f g (FourN h i j k) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node3N g h i) (node2N j k) m2
-addDigits4 m1 (FourN a b c d) e f g h (OneN i) m2 =
+addDigits4 m1 (FourN a b c d) !e !f !g !h (OneN i) m2 =
     appendTree3 m1 (node3N a b c) (node3N d e f) (node3N g h i) m2
-addDigits4 m1 (FourN a b c d) e f g h (TwoN i j) m2 =
+addDigits4 m1 (FourN a b c d) !e !f !g !h (TwoN i j) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node2N g h) (node2N i j) m2
-addDigits4 m1 (FourN a b c d) e f g h (ThreeN i j k) m2 =
+addDigits4 m1 (FourN a b c d) !e !f !g !h (ThreeN i j k) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node3N g h i) (node2N j k) m2
-addDigits4 m1 (FourN a b c d) e f g h (FourN i j k l) m2 =
+addDigits4 m1 (FourN a b c d) !e !f !g !h (FourN i j k l) m2 =
     appendTree4 m1 (node3N a b c) (node3N d e f) (node3N g h i) (node3N j k l) m2
 ----------------
 -- 4.4 Splitting
@@ -1709,7 +1712,6 @@ lookup p
       mt = mpr <> measureDeepTree t
 
 -- Precondition: The predicate is definitely satisfied for some contained element
-{-# INLINE lookupDigitL #-}
 lookupDigitL :: (Measure -> Bool) -> Measure -> DigitL -> Elem
 lookupDigitL p !m0 = \case
   OneL x -> x
@@ -1752,7 +1754,6 @@ lookupDeepTree p !m0 = \case
     mt = mpr <> measureDeepTree t
 
 -- Precondition: The predicate is definitely satisfied for some contained element
-{-# INLINE lookupDigitN #-}
 lookupDigitN :: (Measure -> Bool) -> Measure -> DigitN l -> Elem
 lookupDigitN p !m0 = \case
   OneN x -> lookupNode p m0 x
@@ -1831,7 +1832,6 @@ lookupOrd !i
       mt = mpr <> measureDeepTree t
 
 -- Precondition: The index is definitely smaller than the measure of the digit + prefix
-{-# INLINE lookupDigitLOrd #-}
 lookupDigitLOrd :: Ord Measure => Measure -> Measure -> DigitL -> Elem
 lookupDigitLOrd !i !m0 = \case
   OneL x -> x
@@ -1958,7 +1958,6 @@ lookupOrdG !i
       mt = mpr <> measureDeepTree t
 
 -- Precondition: The index is definitely smaller than the measure of the digit + prefix
-{-# INLINE lookupDigitLOrdG #-}
 lookupDigitLOrdG :: (Ord Measure, Group Measure) => Measure -> DigitL -> Elem
 lookupDigitLOrdG !i = \case
   OneL x -> x
