@@ -8,7 +8,7 @@ author:        bitdizzy
 maintainer:    bitdizzy <dev@bitdizzy.io>
 stability:     experimental
 homepage:      http://github.com/bitdizzy/unpacked-fingertree/
-bug-reports:   http://github.com/ekmett/unpacked-fingertree/issues
+bug-reports:   http://github.com/bitdizzy/unpacked-fingertree/issues
 copyright:     Copyright (C) bitdizzy 2021
 build-type:    Simple
 synopsis:      Unpacked fingertrees via backpack
